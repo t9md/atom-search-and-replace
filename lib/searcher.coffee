@@ -19,7 +19,8 @@ class Searcher
     @runCommand {command, args, editor, options, project}
 
   runCommand: ({command, args, options, editor, project}) ->
-    onData = (data) => @emitter.emit('did-get-data', {data, project})
+    cwd = options.cwd
+    onData = (data) => @emitter.emit('did-get-data', {data, project, cwd})
     onFinish = (code) => @emitter.emit('did-finish', code)
 
     stdout = (output) -> onData(output)

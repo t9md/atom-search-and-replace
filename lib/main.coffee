@@ -1,7 +1,7 @@
 {CompositeDisposable, Emitter, Point} = require 'atom'
 path = require 'path'
 Searcher = require './searcher'
-{getAdjacentPaneForPane} = require './utils'
+{getAdjacentPaneForPane, smartScrollToBufferPosition} = require './utils'
 
 module.exports =
   activate: ->
@@ -27,15 +27,16 @@ module.exports =
     @table ?= {}
     @table[row] = [file, point]
 
-  replaceLine: (line, lastRow) ->
+  replaceLine: (line, {lastRow, cwd}) ->
     line.replace /^(.*?):(\d+:\d+):(.*)/, (str, file, pos, line) =>
       lineText = "#{pos}:#{line}"
-      if @section is file
+      filePath = path.join(cwd, file)
+      text = if @section is file
+        @saveTable(lastRow, filePath, pos)
         lineText
-        @saveTable(lastRow, file, pos)
       else
         @section = file
-        @saveTable(lastRow+1, file, pos)
+        @saveTable(lastRow+1, filePath, pos)
         '## ' + @section + "\n" + lineText
 
   setGrammar: (editor) ->
@@ -54,12 +55,16 @@ module.exports =
     [row, column] = point.split(':')
     row = parseInt(row) - 1
     column = parseInt(column)
+    point = new Point(row, column)
     originalPane = atom.workspace.getActivePane()
     pane = getAdjacentPaneForPane(atom.workspace.getActivePane())
     pane.activate()
     atom.workspace.open(file).then (_editor) ->
-      _editor.setCursorBufferPosition([row, column])
-      originalPane.activate() if options.reveal
+      smartScrollToBufferPosition(_editor, point)
+      if options.reveal
+        originalPane.activate()
+      else
+        _editor.setCursorBufferPosition(point)
 
   search: (word) ->
     @section = null
@@ -74,14 +79,14 @@ module.exports =
       editor.setCursorBufferPosition([0, 0])
 
       subscriptions.add @searcher.onDidGetData (event) =>
-        {data} = event
+        {data, cwd} = event
         if @project isnt event.project
           @project = event.project
           @insertAtLastRow(editor, "# #{@project}" + "\n")
 
         for line in data.split("\n")
           lastRow = editor.getLastBufferRow()
-          text = @replaceLine(line, lastRow)
+          text = @replaceLine(line, {lastRow, cwd})
           @insertAtLastRow(editor, text + "\n")
 
       subscriptions.add @searcher.onDidFinish (code) ->
