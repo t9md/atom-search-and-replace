@@ -1,0 +1,12 @@
+{
+  "name": "search-and-replace",
+  "main": "./lib/main",
+  "version": "0.0.0",
+  "description": "experiment",
+  "keywords": [],
+  "repository": "https://github.com/t9md/atom-search-and-replace",
+  "license": "MIT",
+  "engines": {
+    "atom": ">=0.174.0 <2.0.0"
+  }
+}
