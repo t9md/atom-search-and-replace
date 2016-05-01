@@ -1,0 +1,8 @@
+'atom-text-editor.search-and-replace':
+  'q': 'core:close'
+  'o': 'search-and-replace:jump'
+
+'atom-text-editor.search-and-replace.vim-mode-plus.normal-mode[data-grammar="source gfm"]':
+  'q': 'core:close'
+  'o': 'search-and-replace:jump'
+  'O': 'search-and-replace:reveal'
