@@ -19,6 +19,14 @@ getAdjacentPaneForPane = (pane) ->
     .last()
     .value()
 
+openInAdjacentPane = (uri, options={}) ->
+  pane = getAdjacentPaneForPane(atom.workspace.getActivePane())
+  if pane?
+    pane.activate()
+  else
+    options.split = 'right'
+  atom.workspace.open(uri, options)
+
 activatePaneItem = (item) ->
   pane = atom.workspace.paneForItem(item)
   if pane?
@@ -66,4 +74,5 @@ module.exports = {
   activatePaneItem
   decorateRange
   smartScrollToBufferPosition
+  openInAdjacentPane
 }

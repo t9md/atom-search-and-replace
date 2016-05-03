@@ -1,24 +1,29 @@
-'name': 'Search and Replace result'
+'name': 'Search and replace buffer'
 'scopeName': 'source.search-and-replace'
 'fileTypes': [ ]
 'patterns': [
   {
     'match': 'PLACE_HOLDER'
-    'name': 'keyword.reserved.coffee'
+    'name': 'keyword.search.search-and-replace'
   }
   {
-    'match': '^\\d+:\\d+:'
-    'name': 'constant'
+    'match': '^(\\d+):(\\d+):'
+    'name': 'location.search-and-replace'
+    'captures':
+      '1':
+        'name': 'constant.numeric.line.search-and-replace'
+      '2':
+        'name': 'constant.numeric.column.search-and-replace'
   }
   {
     'begin': '^(#{2})(\\s*)'
     'end': '$'
-    'name': 'markup.heading.heading-2.gfm'
+    'name': 'markup.heading.heading-2.search-and-replace'
     'captures':
       '1':
-        'name': 'markup.heading.marker.gfm'
+        'name': 'markup.heading.marker.search-and-replace'
       '2':
-        'name': 'markup.heading.space.gfm'
+        'name': 'markup.heading.space.search-and-replace'
     'patterns': [
       {
         'include': '$self'
@@ -28,12 +33,12 @@
   {
     'begin': '^(#{1})(\\s*)'
     'end': '$'
-    'name': 'markup.heading.heading-1.gfm'
+    'name': 'markup.heading.heading-1.search-and-replace'
     'captures':
       '1':
-        'name': 'markup.heading.marker.gfm'
+        'name': 'markup.heading.marker.search-and-replace'
       '2':
-        'name': 'markup.heading.space.gfm'
+        'name': 'markup.heading.space.search-and-replace'
     'patterns': [
       {
         'include': '$self'

@@ -1,5 +1,6 @@
 {CompositeDisposable, Emitter, Point} = require 'atom'
 path = require 'path'
+_ = require 'underscore-plus'
 Searcher = require './searcher'
 Grammar = require atom.config.resourcePath + "/node_modules/first-mate/lib/grammar.js"
 CSON = null
@@ -7,6 +8,7 @@ CSON = null
   getAdjacentPaneForPane
   smartScrollToBufferPosition
   decorateRange
+  openInAdjacentPane
 } = require './utils'
 
 module.exports =
@@ -29,29 +31,20 @@ module.exports =
     range = editor.bufferRangeForBufferRow(lastRow)
     editor.setTextInBufferRange(range, text)
 
-  saveTable: (row, file, point) ->
+  saveTable: (row, filePath, point) ->
     @table ?= {}
-    @table[row] = [file, point]
+    @table[row] = [filePath, point]
 
-  replaceLine: (line, {lastRow, cwd}) ->
-    line.replace /^(.*?):(\d+:\d+):(.*)/, (str, file, pos, line) =>
-      lineText = "#{pos}:#{line}"
-      filePath = path.join(cwd, file)
-      text = if @section is file
-        @saveTable(lastRow, filePath, pos)
-        lineText
-      else
-        @section = file
-        @saveTable(lastRow+1, filePath, pos)
-        '## ' + @section + "\n" + lineText
-
-  setGrammar: (editor, keyword) ->
+  readGrammarFile: (grammarPath) ->
     CSON ?= require 'season'
-    atom.grammars.removeGrammarForScopeName('source.search-and-replace')
+    CSON.readFileSync(grammarPath) ? {}
+
+  updateGrammar: (editor, keyword) ->
     grammarPath = path.join(__dirname, 'grammar', 'search-and-replace.cson')
-    grammarObject = CSON.readFileSync(grammarPath) ? {}
-    grammarObject.patterns[0].match = keyword
-    grammar = atom.grammars.createGrammar(grammarPath, grammarObject)
+    @keywordGrammarObject ?= @readGrammarFile(grammarPath)
+    atom.grammars.removeGrammarForScopeName('source.search-and-replace')
+    @keywordGrammarObject.patterns[0].match = "(?i:#{_.escapeRegExp(keyword)})"
+    grammar = atom.grammars.createGrammar(grammarPath, @keywordGrammarObject)
     atom.grammars.addGrammar(grammar)
     editor.setGrammar(grammar)
 
@@ -72,72 +65,92 @@ module.exports =
       'search-and-replace:reveal': => @jump(editor, reveal: true)
       'search-and-replace:toggle-auto-reveal': => @autoReveal = not @autoReveal
 
-  jump: (editor, options={reveal: false}) ->
-    isJumpableRow = (row) ->
-      char = editor.getTextInBufferRange([[row, 0], [row, 1]])
-      char.match(/\d/)?
 
+  jump: (editor, options={reveal: false}) ->
     {row} = editor.getCursorBufferPosition()
-    unless isJumpableRow(row)
-      console.log 'skip'
-      return
-    [file, point] = @table[row]
-    [row, column] = point.split(':')
-    row = parseInt(row) - 1
-    column = parseInt(column)
-    point = new Point(row, column)
+    return unless entry = @table[row]
+
+    [filePath, point] = entry
+    point = new Point(parseInt(point[0]) - 1, parseInt(point[1]))
+
+    highlightRow = (editor, row) ->
+      range = editor.bufferRangeForBufferRow(point.row)
+      decorateRange editor, range,
+        class: 'search-and-replace-flash'
+        timeout: 300
+
     originalPane = atom.workspace.getActivePane()
-    pane = getAdjacentPaneForPane(atom.workspace.getActivePane())
-    decorateOptions =
-      class: 'search-and-replace-flash'
-      timeout: 300
-    pane.activate()
-    atom.workspace.open(file).then (_editor) ->
+    openInAdjacentPane(filePath).then (_editor) ->
       smartScrollToBufferPosition(_editor, point)
-      range = _editor.bufferRangeForBufferRow(point.row)
-      decorateRange(_editor, range, decorateOptions)
+      highlightRow(_editor, point.row)
 
       if options.reveal
         originalPane.activate()
       else
         _editor.setCursorBufferPosition(point)
 
-  observeNarrowChange: (editor) ->
+  observeNarrowInputChange: (editor) ->
     buffer = editor.getBuffer()
     buffer.onDidChange ({newRange}) ->
       return unless newRange.start.row is 0
       word = buffer.lineForRow(0)
+      console.log word
+
+  parseLine: (line) ->
+    m = line.match(/^(.*?):(\d+):(\d+):(.*)$/)
+    if m?
+      {
+        filePath: m[1]
+        row: m[2]
+        column: m[3]
+        lineText: m[4]
+      }
+    else
+      console.log 'nmatch!', line
+      {}
+
+  formatLine: (lineParsed, cwd) ->
+    {filePath, row, column, lineText} = lineParsed
+    "#{row}:#{column}:#{lineText}"
+
+  outputterForProject: (project, editor) ->
+    initialData = true
+    (event) =>
+      {data} = event
+      if initialData
+        @insertAtLastRow(editor, "# #{path.basename(project)}\n")
+        initialData = false
+
+      currentFile = null
+      for line in data.split("\n") when line.length
+        lineParsed = @parseLine(line)
+        {filePath, row, column} = lineParsed
+        if filePath isnt currentFile
+          currentFile = filePath
+          @insertAtLastRow(editor, "## #{currentFile}\n")
+        range = @insertAtLastRow(editor, @formatLine(lineParsed) + "\n")
+        @saveTable(range.start.row, path.join(project, filePath), [row, column])
 
   search: (word) ->
-    @section = null
-    @project = null
-
-    subscriptions = new CompositeDisposable
-
-    atom.workspace.open(null, {split: 'right'}).then (editor) =>
-      editor.insertText("\n")
-      editor.setCursorBufferPosition([0, 0])
+    openInAdjacentPane(null).then (editor) =>
+      editor.insertText("#{word}\n")
+      editor.setCursorBufferPosition([0, Infinity])
       editor.isModified = -> false
       @registerCommands(editor)
-      @setGrammar(editor, word)
-      @observeNarrowChange(editor)
+      @updateGrammar(editor, word)
 
-      subscriptions.add @searcher.onDidGetData (event) =>
-        {data, cwd} = event
-        if @project isnt event.project
-          @project = event.project
-          @insertAtLastRow(editor, "# #{@project}" + "\n")
+      projects = atom.project.getPaths()
+      finished = 0
+      onFinish = (code) =>
+        finished++
+        if finished is projects.length
+          @observeNarrowInputChange(editor)
+          @observeCursorPositionChange(editor)
+          console.log "#{finished} finished"
+        else
+          console.log "#{finished} yet finished"
 
-        for line in data.split("\n")
-          lastRow = editor.getLastBufferRow()
-          text = @replaceLine(line, {lastRow, cwd})
-          @insertAtLastRow(editor, text + "\n")
-
-      subscriptions.add @searcher.onDidFinish (code) =>
-        subscriptions.dispose()
-        @observeCursorPositionChange(editor)
-
-      for cwd in atom.project.getPaths()
-        @section = null
-        @project = path.basename(cwd)
-        @searcher.search(word, {cwd, editor, @project})
+      for project, i in projects
+        pattern = _.escapeRegExp(word)
+        onData = @outputterForProject(project, editor)
+        @searcher.search(pattern, {cwd: project, onData, onFinish})
