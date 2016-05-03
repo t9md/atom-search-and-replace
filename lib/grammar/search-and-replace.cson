@@ -1,0 +1,43 @@
+'name': 'Search and Replace result'
+'scopeName': 'source.search-and-replace'
+'fileTypes': [ ]
+'patterns': [
+  {
+    'match': 'PLACE_HOLDER'
+    'name': 'keyword.reserved.coffee'
+  }
+  {
+    'match': '^\\d+:\\d+:'
+    'name': 'constant'
+  }
+  {
+    'begin': '^(#{2})(\\s*)'
+    'end': '$'
+    'name': 'markup.heading.heading-2.gfm'
+    'captures':
+      '1':
+        'name': 'markup.heading.marker.gfm'
+      '2':
+        'name': 'markup.heading.space.gfm'
+    'patterns': [
+      {
+        'include': '$self'
+      }
+    ]
+  }
+  {
+    'begin': '^(#{1})(\\s*)'
+    'end': '$'
+    'name': 'markup.heading.heading-1.gfm'
+    'captures':
+      '1':
+        'name': 'markup.heading.marker.gfm'
+      '2':
+        'name': 'markup.heading.space.gfm'
+    'patterns': [
+      {
+        'include': '$self'
+      }
+    ]
+  }
+]
