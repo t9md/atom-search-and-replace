@@ -3,7 +3,7 @@
 'fileTypes': [ ]
 'patterns': [
   {
-    'match': 'PLACE_HOLDER'
+    'match': 'PLACE_HOLDER_XXXXJKAFJA:FJAK:JOIJF' # never match
     'name': 'keyword.search.search-and-replace'
   }
   {

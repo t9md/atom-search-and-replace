@@ -12,10 +12,8 @@ class Searcher
     @runCommand {command, args, options, onData, onFinish}
 
   runCommand: ({command, args, options, onData, onFinish}) ->
-    cwd = options.cwd
-
-    stdout = (output) -> onData({data: output, cwd})
-    stderr = (output) -> onData({data: output, cwd})
+    stdout = (output) -> onData({data: output})
+    stderr = (output) -> onData({data: output})
     exit = (code) -> onFinish(code)
 
     process = new BufferedProcess {command, args, options, stdout, stderr, exit}

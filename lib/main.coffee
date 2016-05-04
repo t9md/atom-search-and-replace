@@ -16,6 +16,8 @@ module.exports =
   activate: ->
     @subscriptions = new CompositeDisposable
     @searcher ?= new Searcher
+    atom.commands.add 'atom-text-editor',
+      'search-and-replace:search-in-file': => @searchInFile()
 
   deactivate: ->
     @subscriptions.dispose()
@@ -26,6 +28,7 @@ module.exports =
 
   provideSearchAndReplace: ->
     search: @search.bind(this)
+    searchInFile: @searchInFile.bind(this)
 
   updateGrammar: (editor, narrowWords=null) ->
     grammarPath = path.join(__dirname, 'grammar', 'search-and-replace.cson')
@@ -34,7 +37,8 @@ module.exports =
       @keywordGrammarObject = CSON.readFileSync(grammarPath)
 
     atom.grammars.removeGrammarForScopeName('source.search-and-replace')
-    @keywordGrammarObject.patterns[0].match = "(?i:#{_.escapeRegExp(@searchWord)})"
+    if @searchWord?
+      @keywordGrammarObject.patterns[0].match = "(?i:#{_.escapeRegExp(@searchWord)})"
     @keywordGrammarObject.patterns[1].match = narrowWords ? '$a'
     grammar = atom.grammars.createGrammar(grammarPath, @keywordGrammarObject)
     atom.grammars.addGrammar(grammar)
@@ -66,8 +70,8 @@ module.exports =
     unless entry = @rowToEntry[row]
       return
 
-    {project, filePath, point} = entry
-    fullPath = path.join(project, filePath)
+    {project, fullPath, filePath, point} = entry
+    fullPath ?= path.join(project, filePath)
     point = new Point(parseInt(point[0]) - 1, parseInt(point[1]))
 
     highlightRow = (editor, row) ->
@@ -120,7 +124,7 @@ module.exports =
         (@candidates ?= []).push(entry)
       @renderCandidate(editor, @candidates)
 
-  renderCandidate: (editor, candidates, {replace}={}) ->
+  renderCandidate: (editor, candidates, {replace, header}={}) ->
     @locked = true
     try
       replace ?= false
@@ -134,13 +138,14 @@ module.exports =
       currentFile = null
       initialRow = if replace then 1 else editor.getLastBufferRow()
       for entry in candidates
-        if entry.project isnt currentProject
-          currentProject = entry.project
-          lines.push("# #{path.basename(currentProject)}")
+        if @showHeader
+          if entry.project isnt currentProject
+            currentProject = entry.project
+            lines.push("# #{path.basename(currentProject)}")
 
-        if entry.filePath isnt currentFile
-          currentFile = entry.filePath
-          lines.push("## #{currentFile}")
+          if entry.filePath isnt currentFile and @show
+            currentFile = entry.filePath
+            lines.push("## #{currentFile}")
         lines.push(@formatLine(entry))
         @rowToEntry[initialRow + (lines.length - 1)] = entry
 
@@ -162,9 +167,33 @@ module.exports =
     else
       @updateGrammar(editor)
 
+  searchInFile: (@searchWord=null) ->
+    @candidates = null
+    @showHeader = false
+
+    editor = atom.workspace.getActiveTextEditor()
+    filePath = editor.getPath()
+    for line, i in editor.getBuffer().getLines()
+      entry =
+        fullPath: filePath
+        point: [i, 0]
+        lineText: line
+      (@candidates ?= []).push(entry)
+
+    openInAdjacentPane(null).then (editor) =>
+      editor.insertText("\n")
+      editor.setCursorBufferPosition([0, 0])
+      editor.isModified = -> false
+      @registerCommands(editor)
+      @updateGrammar(editor)
+      @observeNarrowInputChange(editor)
+      @observeCursorPositionChange(editor)
+      @renderCandidate(editor, @candidates)
+
   searchersRunning: []
   search: (@searchWord) ->
     @candidates = null
+    @showHeader = true
     openInAdjacentPane(null).then (editor) =>
       editor.insertText("\n")
       editor.setCursorBufferPosition([0, 0])
