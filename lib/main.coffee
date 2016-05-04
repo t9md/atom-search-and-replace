@@ -61,11 +61,13 @@ module.exports =
     editorElement = atom.views.getView(editor)
     editorElement.classList.add('search-and-replace')
     atom.commands.add editorElement,
-      'search-and-replace:jump': => @jump(editor)
+      'search-and-replace:jump': => @jump(editor, {close: true})
+      'search-and-replace:jump-with-keep-result': => @jump(editor)
       'search-and-replace:reveal': => @jump(editor, reveal: true)
       'search-and-replace:toggle-auto-reveal': => @autoReveal = not @autoReveal
 
-  jump: (editor, options={reveal: false}) ->
+  jump: (editor, options={}) ->
+    {reveal, close} = options
     {row} = editor.getCursorBufferPosition()
 
     unless entry = @rowToEntry[row]
@@ -91,7 +93,7 @@ module.exports =
         originalPane.activate()
       else
         _editor.setCursorBufferPosition(point)
-        resultEditor.destroy()
+        resultEditor.destroy() if close
 
   observeNarrowInputChange: (editor) ->
     buffer = editor.getBuffer()
@@ -181,7 +183,7 @@ module.exports =
     for line, i in editor.getBuffer().getLines()
       entry =
         fullPath: filePath
-        point: [i, 0]
+        point: [i+1, 0]
         lineText: line
       (@candidates ?= []).push(entry)
 

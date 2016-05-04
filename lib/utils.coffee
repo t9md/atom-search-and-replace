@@ -24,8 +24,8 @@ openInAdjacentPane = (uri, options={}) ->
   if pane?
     pane.activate()
   else
-    # options.split = 'right'
-    options.split = 'down'
+    options.split = 'right'
+    # options.split = 'down'
   atom.workspace.open(uri, options)
 
 activatePaneItem = (item) ->

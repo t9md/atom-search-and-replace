@@ -6,9 +6,11 @@
 #
 'atom-text-editor.search-and-replace.vim-mode-plus.normal-mode[data-grammar="source search-and-replace"]':
   'q': 'core:close'
-  'o': 'search-and-replace:jump'
   'enter': 'search-and-replace:jump'
-  'O': 'search-and-replace:reveal'
+  # 'O': 'search-and-replace:reveal'
+  # 'o': 'search-and-replace:reveal'
+  'o': 'search-and-replace:jump-with-keep-result'
+  'u': 'search-and-replace:reveal'
   'r': 'search-and-replace:toggle-auto-reveal'
 
 'atom-text-editor.search-and-replace.vim-mode-plus.insert-mode[data-grammar="source search-and-replace"]':
