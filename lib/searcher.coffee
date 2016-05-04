@@ -23,3 +23,4 @@ class Searcher
       if error.code is 'ENOENT' and error.syscall.indexOf('spawn') is 0
         console.log "ERROR"
       handle()
+    process

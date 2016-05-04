@@ -29,7 +29,10 @@ module.exports =
   insertAtLastRow: (editor, text) ->
     lastRow = editor.getLastBufferRow()
     range = editor.bufferRangeForBufferRow(lastRow)
-    editor.setTextInBufferRange(range, text)
+    @locked = true
+    range = editor.setTextInBufferRange(range, text)
+    @locked = false
+    range
 
   saveTable: (row, filePath, point) ->
     @table ?= {}
@@ -51,11 +54,14 @@ module.exports =
   autoReveal: null
   isAutoReveal: -> @autoReveal
 
+  locked: null
+  isLocked: -> @locked
+
   observeCursorPositionChange: (editor) ->
     editor.onDidChangeCursorPosition ({oldBufferPosition, newBufferPosition}) =>
+      return if @isLocked()
       return unless @isAutoReveal()
-      if oldBufferPosition.row isnt newBufferPosition.row
-        @jump(editor, reveal: true)
+      @jump(editor, reveal: true) if (oldBufferPosition.row isnt newBufferPosition.row)
 
   registerCommands: (editor) ->
     editorElement = atom.views.getView(editor)
@@ -65,12 +71,13 @@ module.exports =
       'search-and-replace:reveal': => @jump(editor, reveal: true)
       'search-and-replace:toggle-auto-reveal': => @autoReveal = not @autoReveal
 
-
   jump: (editor, options={reveal: false}) ->
     {row} = editor.getCursorBufferPosition()
-    return unless entry = @table[row]
 
-    [filePath, point] = entry
+    unless entry = _.detect(@candidates, (entry) -> entry.row is row)
+      return
+
+    {fullPath, point} = entry
     point = new Point(parseInt(point[0]) - 1, parseInt(point[1]))
 
     highlightRow = (editor, row) ->
@@ -80,7 +87,7 @@ module.exports =
         timeout: 300
 
     originalPane = atom.workspace.getActivePane()
-    openInAdjacentPane(filePath).then (_editor) ->
+    openInAdjacentPane(fullPath, {pending: true}).then (_editor) ->
       smartScrollToBufferPosition(_editor, point)
       highlightRow(_editor, point.row)
 
@@ -91,61 +98,98 @@ module.exports =
 
   observeNarrowInputChange: (editor) ->
     buffer = editor.getBuffer()
-    buffer.onDidChange ({newRange}) ->
-      return unless newRange.start.row is 0
-      word = buffer.lineForRow(0)
-      console.log word
+    currentSearch = buffer.lineForRow(0)
+    buffer.onDidChange ({newRange}) =>
+      return unless (newRange.start.row is 0)
+      @refresh(editor, buffer.lineForRow(0))
+
+    # buffer.onDidStopChanging =>
+    #   if currentSearch isnt buffer.lineForRow(0)
+    #     currentSearch = buffer.lineForRow(0)
+    #     @refresh(editor, currentSearch)
 
   parseLine: (line) ->
     m = line.match(/^(.*?):(\d+):(\d+):(.*)$/)
     if m?
       {
         filePath: m[1]
-        row: m[2]
-        column: m[3]
+        point: [m[2], m[3]]
         lineText: m[4]
       }
     else
       console.log 'nmatch!', line
       {}
 
-  formatLine: (lineParsed, cwd) ->
-    {filePath, row, column, lineText} = lineParsed
-    "#{row}:#{column}:#{lineText}"
+  formatLine: (lineParsed) ->
+    {filePath, point, lineText} = lineParsed
+    "#{point[0]}:#{point[1]}:#{lineText}"
 
   outputterForProject: (project, editor) ->
     initialData = true
     (event) =>
       {data} = event
       if initialData
-        @insertAtLastRow(editor, "# #{path.basename(project)}\n")
+        projectHeader = "# #{path.basename(project)}\n"
+        @insertAtLastRow(editor, projectHeader)
         initialData = false
 
       currentFile = null
       for line in data.split("\n") when line.length
-        lineParsed = @parseLine(line)
-        {filePath, row, column} = lineParsed
-        if filePath isnt currentFile
-          currentFile = filePath
+        entry = @parseLine(line)
+        if entry.filePath isnt currentFile
+          currentFile = entry.filePath
           @insertAtLastRow(editor, "## #{currentFile}\n")
-        range = @insertAtLastRow(editor, @formatLine(lineParsed) + "\n")
-        @saveTable(range.start.row, path.join(project, filePath), [row, column])
+        range = @insertAtLastRow(editor, @formatLine(entry) + "\n")
+        entry.fullPath = path.join(project, entry.filePath)
+        entry.row = range.start.row
+        @saveCandidate(entry)
 
+  saveCandidate: (entry) ->
+    @candidates ?= []
+    @candidates.push(entry)
+
+  # findCandidate: (fn) -> _.detect @candidates, (entry) -> fn(entry)
+
+  renderCandidate: (editor, candidates) ->
+    render = (text) ->
+      rangeToRefresh = [[1, 0], editor.getEofBufferPosition()]
+      editor.setTextInBufferRange(rangeToRefresh, text)
+
+    render(
+      candidates.map (entry, i) =>
+        entry.row = i+1
+        console.log entry.row
+        @formatLine(entry)
+      .join("\n")
+    )
+
+  refresh: (editor, words) ->
+    words = _.compact(words.split(/\s+/))
+    candidates = @candidates
+
+    for word in words
+      pattern = ///#{_.escapeRegExp(word)}///
+      candidates = _.filter(candidates, ({lineText}) -> lineText.match(pattern))
+      console.log word, candidates
+    @renderCandidate(editor, candidates)
+
+  searchersRunning: []
   search: (word) ->
+    @candidates = null
     openInAdjacentPane(null).then (editor) =>
-      editor.insertText("#{word}\n")
-      editor.setCursorBufferPosition([0, Infinity])
+      editor.insertText("\n")
+      editor.setCursorBufferPosition([0, 0])
       editor.isModified = -> false
       @registerCommands(editor)
       @updateGrammar(editor, word)
+      @observeNarrowInputChange(editor)
+      @observeCursorPositionChange(editor)
 
       projects = atom.project.getPaths()
       finished = 0
-      onFinish = (code) =>
+      onFinish = (code) ->
         finished++
         if finished is projects.length
-          @observeNarrowInputChange(editor)
-          @observeCursorPositionChange(editor)
           console.log "#{finished} finished"
         else
           console.log "#{finished} yet finished"
@@ -153,4 +197,4 @@ module.exports =
       for project, i in projects
         pattern = _.escapeRegExp(word)
         onData = @outputterForProject(project, editor)
-        @searcher.search(pattern, {cwd: project, onData, onFinish})
+        @searchersRunning.push(@searcher.search(pattern, {cwd: project, onData, onFinish}))
