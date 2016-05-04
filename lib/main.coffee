@@ -154,11 +154,13 @@ module.exports =
     candidates = @candidates
 
     for word in words
-      pattern = ///#{_.escapeRegExp(word)}///
+      pattern = ///#{_.escapeRegExp(word)}///i
       candidates = _.filter(candidates, ({lineText}) -> lineText.match(pattern))
     @renderCandidate(editor, candidates, {replace: true})
     if words.length
       @updateGrammar(editor, "(?i:#{words.map(_.escapeRegExp).join('|')})")
+    else
+      @updateGrammar(editor)
 
   searchersRunning: []
   search: (@searchWord) ->
