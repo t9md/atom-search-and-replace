@@ -17,7 +17,10 @@ module.exports =
     @subscriptions = new CompositeDisposable
     @searcher ?= new Searcher
     atom.commands.add 'atom-text-editor',
-      'search-and-replace:search-in-file': => @searchInFile()
+      'search-and-replace:search-in-file': =>
+        @searchInFile()
+        # editorElement = atom.views.getView(atom.workspace.getActiveTextEditor())
+        # atom.commands.dispatch(editorElement, 'vim-mode-plus:activate-insert-mode')
 
   deactivate: ->
     @subscriptions.dispose()
@@ -113,7 +116,7 @@ module.exports =
 
   formatLine: (lineParsed) ->
     {filePath, point, lineText} = lineParsed
-    " #{point[0]}:#{point[1]}:#{lineText}"
+    "#{point[0]}:#{point[1]}:#{lineText}"
 
   outputterForProject: (project, editor) ->
     ({data}) =>
@@ -143,10 +146,12 @@ module.exports =
             currentProject = entry.project
             lines.push("# #{path.basename(currentProject)}")
 
-          if entry.filePath isnt currentFile and @show
+          if entry.filePath isnt currentFile
             currentFile = entry.filePath
             lines.push("## #{currentFile}")
-        lines.push(@formatLine(entry))
+          lines.push(" " + @formatLine(entry))
+        else
+          lines.push(@formatLine(entry))
         @rowToEntry[initialRow + (lines.length - 1)] = entry
 
       range = [[initialRow, 0], editor.getEofBufferPosition()]
@@ -183,12 +188,15 @@ module.exports =
     openInAdjacentPane(null).then (editor) =>
       editor.insertText("\n")
       editor.setCursorBufferPosition([0, 0])
+      # editor.getTitle -> 's&r:file'
       editor.isModified = -> false
       @registerCommands(editor)
       @updateGrammar(editor)
       @observeNarrowInputChange(editor)
       @observeCursorPositionChange(editor)
       @renderCandidate(editor, @candidates)
+    # editorElement = atom.views.getView(editor)
+    # atom.commands.dispatch(editorElement, 'vim-mode-plus:activate-insert-mode')
 
   searchersRunning: []
   search: (@searchWord) ->
@@ -196,6 +204,7 @@ module.exports =
     @showHeader = true
     openInAdjacentPane(null).then (editor) =>
       editor.insertText("\n")
+      # editor.getTitle -> 's&r:project'
       editor.setCursorBufferPosition([0, 0])
       editor.isModified = -> false
       @registerCommands(editor)
@@ -216,3 +225,5 @@ module.exports =
         pattern = _.escapeRegExp(@searchWord)
         onData = @outputterForProject(project, editor)
         @searchersRunning.push(@searcher.search(pattern, {cwd: project, onData, onFinish}))
+    # editorElement = atom.views.getView(editor)
+    # atom.commands.dispatch(editorElement, 'vim-mode-plus:activate-insert-mode')
