@@ -7,7 +7,11 @@
     'name': 'keyword.search.search-and-replace'
   }
   {
-    'match': '^(\\d+):(\\d+):'
+    'match': '$a' # never match
+    'name': 'entity.name.function.search-and-replace'
+  }
+  {
+    'match': '^ (\\d+):(\\d+):'
     'name': 'location.search-and-replace'
     'captures':
       '1':

@@ -4,6 +4,7 @@ _ = require 'underscore-plus'
 Searcher = require './searcher'
 Grammar = require atom.config.resourcePath + "/node_modules/first-mate/lib/grammar.js"
 CSON = null
+grammarPath = path.join(__dirname, 'grammar', 'search-and-replace.cson')
 {
   getAdjacentPaneForPane
   smartScrollToBufferPosition
@@ -26,27 +27,15 @@ module.exports =
   provideSearchAndReplace: ->
     search: @search.bind(this)
 
-  insertAtLastRow: (editor, text) ->
-    lastRow = editor.getLastBufferRow()
-    range = editor.bufferRangeForBufferRow(lastRow)
-    @locked = true
-    range = editor.setTextInBufferRange(range, text)
-    @locked = false
-    range
-
-  saveTable: (row, filePath, point) ->
-    @table ?= {}
-    @table[row] = [filePath, point]
-
-  readGrammarFile: (grammarPath) ->
-    CSON ?= require 'season'
-    CSON.readFileSync(grammarPath) ? {}
-
-  updateGrammar: (editor, keyword) ->
+  updateGrammar: (editor, narrowWords=null) ->
     grammarPath = path.join(__dirname, 'grammar', 'search-and-replace.cson')
-    @keywordGrammarObject ?= @readGrammarFile(grammarPath)
+    unless @keywordGrammarObject?
+      CSON ?= require 'season'
+      @keywordGrammarObject = CSON.readFileSync(grammarPath)
+
     atom.grammars.removeGrammarForScopeName('source.search-and-replace')
-    @keywordGrammarObject.patterns[0].match = "(?i:#{_.escapeRegExp(keyword)})"
+    @keywordGrammarObject.patterns[0].match = "(?i:#{_.escapeRegExp(@searchWord)})"
+    @keywordGrammarObject.patterns[1].match = narrowWords ? '$a'
     grammar = atom.grammars.createGrammar(grammarPath, @keywordGrammarObject)
     atom.grammars.addGrammar(grammar)
     editor.setGrammar(grammar)
@@ -74,10 +63,11 @@ module.exports =
   jump: (editor, options={reveal: false}) ->
     {row} = editor.getCursorBufferPosition()
 
-    unless entry = _.detect(@candidates, (entry) -> entry.row is row)
+    unless entry = @rowToEntry[row]
       return
 
-    {fullPath, point} = entry
+    {project, filePath, point} = entry
+    fullPath = path.join(project, filePath)
     point = new Point(parseInt(point[0]) - 1, parseInt(point[1]))
 
     highlightRow = (editor, row) ->
@@ -87,6 +77,7 @@ module.exports =
         timeout: 300
 
     originalPane = atom.workspace.getActivePane()
+    resultEditor = atom.workspace.getActiveTextEditor()
     openInAdjacentPane(fullPath, {pending: true}).then (_editor) ->
       smartScrollToBufferPosition(_editor, point)
       highlightRow(_editor, point.row)
@@ -95,6 +86,7 @@ module.exports =
         originalPane.activate()
       else
         _editor.setCursorBufferPosition(point)
+        resultEditor.destroy()
 
   observeNarrowInputChange: (editor) ->
     buffer = editor.getBuffer()
@@ -102,11 +94,6 @@ module.exports =
     buffer.onDidChange ({newRange}) =>
       return unless (newRange.start.row is 0)
       @refresh(editor, buffer.lineForRow(0))
-
-    # buffer.onDidStopChanging =>
-    #   if currentSearch isnt buffer.lineForRow(0)
-    #     currentSearch = buffer.lineForRow(0)
-    #     @refresh(editor, currentSearch)
 
   parseLine: (line) ->
     m = line.match(/^(.*?):(\d+):(\d+):(.*)$/)
@@ -122,46 +109,45 @@ module.exports =
 
   formatLine: (lineParsed) ->
     {filePath, point, lineText} = lineParsed
-    "#{point[0]}:#{point[1]}:#{lineText}"
+    " #{point[0]}:#{point[1]}:#{lineText}"
 
   outputterForProject: (project, editor) ->
-    initialData = true
-    (event) =>
-      {data} = event
-      if initialData
-        projectHeader = "# #{path.basename(project)}\n"
-        @insertAtLastRow(editor, projectHeader)
-        initialData = false
-
-      currentFile = null
-      for line in data.split("\n") when line.length
+    ({data}) =>
+      lines = data.split("\n")
+      for line in lines when line.length
         entry = @parseLine(line)
+        entry.project = project
+        (@candidates ?= []).push(entry)
+      @renderCandidate(editor, @candidates)
+
+  renderCandidate: (editor, candidates, {replace}={}) ->
+    @locked = true
+    try
+      replace ?= false
+      if replace
+        @rowToEntry = {}
+      else
+        @rowToEntry ?= {}
+
+      lines = []
+      currentProject = null
+      currentFile = null
+      initialRow = if replace then 1 else editor.getLastBufferRow()
+      for entry in candidates
+        if entry.project isnt currentProject
+          currentProject = entry.project
+          lines.push("# #{path.basename(currentProject)}")
+
         if entry.filePath isnt currentFile
           currentFile = entry.filePath
-          @insertAtLastRow(editor, "## #{currentFile}\n")
-        range = @insertAtLastRow(editor, @formatLine(entry) + "\n")
-        entry.fullPath = path.join(project, entry.filePath)
-        entry.row = range.start.row
-        @saveCandidate(entry)
+          lines.push("## #{currentFile}")
+        lines.push(@formatLine(entry))
+        @rowToEntry[initialRow + (lines.length - 1)] = entry
 
-  saveCandidate: (entry) ->
-    @candidates ?= []
-    @candidates.push(entry)
-
-  # findCandidate: (fn) -> _.detect @candidates, (entry) -> fn(entry)
-
-  renderCandidate: (editor, candidates) ->
-    render = (text) ->
-      rangeToRefresh = [[1, 0], editor.getEofBufferPosition()]
-      editor.setTextInBufferRange(rangeToRefresh, text)
-
-    render(
-      candidates.map (entry, i) =>
-        entry.row = i+1
-        console.log entry.row
-        @formatLine(entry)
-      .join("\n")
-    )
+      range = [[initialRow, 0], editor.getEofBufferPosition()]
+      editor.setTextInBufferRange(range, lines.join("\n") + "\n")
+    finally
+      @locked = false
 
   refresh: (editor, words) ->
     words = _.compact(words.split(/\s+/))
@@ -170,18 +156,19 @@ module.exports =
     for word in words
       pattern = ///#{_.escapeRegExp(word)}///
       candidates = _.filter(candidates, ({lineText}) -> lineText.match(pattern))
-      console.log word, candidates
-    @renderCandidate(editor, candidates)
+    @renderCandidate(editor, candidates, {replace: true})
+    if words.length
+      @updateGrammar(editor, "(?i:#{words.map(_.escapeRegExp).join('|')})")
 
   searchersRunning: []
-  search: (word) ->
+  search: (@searchWord) ->
     @candidates = null
     openInAdjacentPane(null).then (editor) =>
       editor.insertText("\n")
       editor.setCursorBufferPosition([0, 0])
       editor.isModified = -> false
       @registerCommands(editor)
-      @updateGrammar(editor, word)
+      @updateGrammar(editor)
       @observeNarrowInputChange(editor)
       @observeCursorPositionChange(editor)
 
@@ -195,6 +182,6 @@ module.exports =
           console.log "#{finished} yet finished"
 
       for project, i in projects
-        pattern = _.escapeRegExp(word)
+        pattern = _.escapeRegExp(@searchWord)
         onData = @outputterForProject(project, editor)
         @searchersRunning.push(@searcher.search(pattern, {cwd: project, onData, onFinish}))
