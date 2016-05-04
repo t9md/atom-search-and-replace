@@ -19,8 +19,6 @@ module.exports =
     atom.commands.add 'atom-text-editor',
       'search-and-replace:search-in-file': =>
         @searchInFile()
-        # editorElement = atom.views.getView(atom.workspace.getActiveTextEditor())
-        # atom.commands.dispatch(editorElement, 'vim-mode-plus:activate-insert-mode')
 
   deactivate: ->
     @subscriptions.dispose()
@@ -176,6 +174,8 @@ module.exports =
     @candidates = null
     @showHeader = false
 
+    # [FIXME] refresh result when editor is modified. e.g observe onDidStopChanging
+
     editor = atom.workspace.getActiveTextEditor()
     filePath = editor.getPath()
     for line, i in editor.getBuffer().getLines()
@@ -188,15 +188,12 @@ module.exports =
     openInAdjacentPane(null).then (editor) =>
       editor.insertText("\n")
       editor.setCursorBufferPosition([0, 0])
-      # editor.getTitle -> 's&r:file'
       editor.isModified = -> false
       @registerCommands(editor)
       @updateGrammar(editor)
       @observeNarrowInputChange(editor)
       @observeCursorPositionChange(editor)
       @renderCandidate(editor, @candidates)
-    # editorElement = atom.views.getView(editor)
-    # atom.commands.dispatch(editorElement, 'vim-mode-plus:activate-insert-mode')
 
   searchersRunning: []
   search: (@searchWord) ->
