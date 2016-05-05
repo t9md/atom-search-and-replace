@@ -196,6 +196,7 @@ module.exports =
       @observeNarrowInputChange(editor)
       @observeCursorPositionChange(editor)
       @renderCandidate(editor, @candidates)
+      editor
 
   searchersRunning: []
   search: (@searchWord) ->
@@ -224,5 +225,7 @@ module.exports =
         pattern = _.escapeRegExp(@searchWord)
         onData = @outputterForProject(project, editor)
         @searchersRunning.push(@searcher.search(pattern, {cwd: project, onData, onFinish}))
+
+      editor
     # editorElement = atom.views.getView(editor)
     # atom.commands.dispatch(editorElement, 'vim-mode-plus:activate-insert-mode')
